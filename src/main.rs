@@ -1,6 +1,7 @@
 use clap::{App, Arg};
+use http::Uri;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server};
+use hyper::{Body, Error, Request, Response, Server};
 use log;
 use pretty_env_logger;
 use std::convert::Infallible;
@@ -31,7 +32,20 @@ macro_rules! time_request {
 }
 
 trait Rule {
-    fn produce_uri(&self, args: &Vec<String>) -> Result<SomeUriType, String>;
+    fn produce_uri(&self, args: &Vec<String>) -> Result<Uri, String>;
+}
+
+#[derive(Default)]
+struct GoogleSearchRule;
+impl Rule for GoogleSearchRule {
+    fn produce_uri(&self, args: &Vec<String>) -> std::result::Result<Uri, String> {
+        Uri::builder()
+            .scheme("https")
+            .authority("www.google.com")
+            .path_and_query(format!("/search?q={}", args.join(" ")))
+            .build()
+            .map_err(|_| "error!".into())
+    }
 }
 
 struct Command {
@@ -48,8 +62,7 @@ impl Config {
         Ok(Self { config_bytes })
     }
 
-    // TODO: Figure out the rust way to do this
-    pub fn parse_rules(&self) -> Result<Vec<Box<dyn Rule>>, String> {
+    pub fn parse_redirect_rules(&self) -> Result<Vec<RedirectRules>, String> {
         todo!();
     }
 
@@ -61,18 +74,22 @@ impl Config {
 #[derive(Default, Debug)]
 struct CommandParser {}
 impl CommandParser {
-    pub fn parse(&self, uri: &SomeUriType) -> Result<Command, String> {
+    pub fn parse(&self, uri: &Uri) -> Result<Command, String> {
         todo!()
     }
 }
 
-type Rules = Vec<Box<dyn Rule>>;
-
-struct RulesRegistry {
-    rules: Rules,
+struct RulesRegistry<R: Rule> {
+    rules: Vec<R>,
 }
 
-impl Debug for RulesRegistry {
+impl<R: Rule> RulesRegistry<R> {
+    pub fn get(&self, rule_name: &str) -> Option<R> {
+        todo!();
+    }
+}
+
+impl<R: Rule> Debug for RulesRegistry<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RulesRegistry")
             .field("rules", &"[...]")
@@ -80,44 +97,58 @@ impl Debug for RulesRegistry {
     }
 }
 
-impl RulesRegistry {
-    pub fn with_rules(rules: Rules) -> Self {
+impl<R: Rule> RulesRegistry<R> {
+    pub fn with_rules(rules: Vec<R>) -> Self {
         Self { rules }
+    }
+}
+
+enum RedirectRules {
+    Google(GoogleSearchRule),
+}
+impl Rule for RedirectRules {
+    fn produce_uri(&self, args: &Vec<String>) -> Result<Uri, String> {
+        match self {
+            Self::Google(rule) => rule.produce_uri(args),
+        }
     }
 }
 
 #[derive(Debug)]
 struct Redirector {
     cmd_parser: CommandParser,
-    rules_registry: RulesRegistry,
+    rules_registry: RulesRegistry<RedirectRules>,
 }
 impl Redirector {
     pub fn with_config(config: &Config) -> Self {
         Self {
             cmd_parser: CommandParser::default(),
-            rules_registry: RulesRegistry::with_rules(config.parse_rules().unwrap()),
+            rules_registry: RulesRegistry::with_rules(config.parse_redirect_rules().unwrap()),
         }
     }
 
-    pub fn evaluate(&self, uri: &SomeUriType) -> Result<SomeUriType, String> {
+    pub fn evaluate(&self, uri: &Uri) -> Result<Uri, String> {
         let cmd = self.cmd_parser.parse(&uri)?;
-        if let Some(rule) = self.rules_registry.get(cmd.name) {
+        if let Some(rule) = self.rules_registry.get(&cmd.name) {
             rule.produce_uri(&cmd.args)
         } else {
             self.do_default(&cmd.args)
         }
     }
 
-    fn do_default(&self, args: &Vec<String>) -> Result<SomeUriType, Infallible> {
-        GoogleSearchRule::default()
-            .produce_uri(args)
-            .expect("Default rules must *always* produce a URI")
+    fn do_default(&self, args: &Vec<String>) -> Result<Uri, String> {
+        GoogleSearchRule::default().produce_uri(args)
     }
 }
 
-fn somehow_read_request_uri() {}
+fn uri_from_conn<T>(req: &mut Request<T>) -> Uri {
+    req.uri().to_owned()
+}
 
-fn somehow_make_response(uri: SomeUriType) {}
+fn somehow_make_response(uri: Uri) -> http::Result<Response<Body>> {
+    let builder = Response::builder().status(302).header("X-Made-EZ", "true");
+    builder.body(Body::from(""))
+}
 
 fn somehow_get_and_validate_args() -> String {
     let matches = App::new("EZProxy")
@@ -144,16 +175,16 @@ async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], 5050));
     log::info!("[boot] Starting on {}", addr);
 
-    let config = Config::read_from_path(&somehow_get_and_validate_args()).unwrap();
-    let redirector = Redirector::with_config(&config);
     let make_service = make_service_fn(|_conn| async move {
-        let res = time_request!({
-            redirector
-                .evaluate(&somehow_read_request_uri())
-                .map(|uri| somehow_make_response(uri))
-        })
-        .map_err(|_| todo!());
-        Ok::<_, Infallible>(res)
+        Ok::<_, Infallible>(service_fn(|mut req| async move {
+            let config = Config::read_from_path(&somehow_get_and_validate_args()).unwrap();
+            let redirector = Redirector::with_config(&config);
+            time_request!({
+                redirector
+                    .evaluate(&uri_from_conn(&mut req))
+                    .and_then(|uri| somehow_make_response(uri).map_err(|_| todo!()))
+            })
+        }))
     });
 
     let server = Server::bind(&addr).serve(make_service);
