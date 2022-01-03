@@ -1,2 +1,2 @@
 m = gmail.com
-npm $pkg = https://www.npmjs.com/search?q=$pkg
+c = calendar.google.com

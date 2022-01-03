@@ -70,6 +70,39 @@ impl Rule for GmailRule {
     }
 }
 
+#[derive(Default)]
+struct CalendarRule;
+impl Rule for CalendarRule {
+    fn produce_uri(&self, _: &Vec<String>) -> Result<Uri, String> {
+        Uri::builder()
+            .scheme("https")
+            .authority("calendar.google.com")
+            .path_and_query("/")
+            .build()
+            .map_err(|e| format!("Error producing URI: {}", e))
+    }
+}
+
+#[derive(Default)]
+struct NpmRule;
+impl Rule for NpmRule {
+    fn produce_uri(&self, args: &Vec<String>) -> Result<Uri, String> {
+        let builder = Uri::builder().scheme("https").authority("npmjs.com");
+
+        let res = match args[..] {
+            [] => builder.path_and_query("/").build(),
+            _ => {
+                let encoded = urlencoding::encode(&args.join(" ")).into_owned();
+                builder
+                    .path_and_query(format!("/search?q={}", encoded))
+                    .build()
+            }
+        };
+
+        res.map_err(|e| format!("Error producing URI: {}", e))
+    }
+}
+
 #[derive(Debug)]
 struct Command {
     name: String,
@@ -87,9 +120,13 @@ impl Config {
     }
 
     pub fn parse_rules(&self) -> Result<Rules, String> {
-        log::warn!(target: "ezproxy::config", "Parsing rules (NOT YET IMPLEMENTED");
+        log::warn!(target: "ezproxy::config", "Parsing rules (NOT YET IMPLEMENTED)");
         let mut rules: HashMap<String, Box<dyn Rule>> = HashMap::new();
+
+        // RULESS TODO: Actually parse
         rules.insert("m".into(), Box::new(GmailRule::default()));
+        rules.insert("c".into(), Box::new(CalendarRule::default()));
+        rules.insert("npm".into(), Box::new(NpmRule::default()));
 
         Ok(rules)
     }
@@ -106,7 +143,7 @@ impl CommandParser {
     pub fn parse(&self, uri: &Uri) -> Result<Command, String> {
         log::debug!(target: "ezproxy::command_parser", "Attempt parse {}", uri);
 
-        let query: String = uri
+        let query = uri
             .query()
             .map(|qs| querystring::querify(qs))
             .and_then(|params| {
@@ -117,7 +154,8 @@ impl CommandParser {
             })
             .map_or(Err("Could not find query param q=...".to_string()), |p| {
                 Ok(p.1.into())
-            })?;
+            })
+            .map(|q: String| q.replace("+", " "))?;
 
         let decoded = urlencoding::decode(&query)
             .map(|cow| cow.into_owned())
