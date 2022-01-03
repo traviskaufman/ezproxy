@@ -1,10 +1,1 @@
-# Comments are ignored
-# Every argument is some sort of URI
 m = gmail.com
-<3 = https://daphneyoureephotography.shootproof.com/
-# Functions/builtins are upper-case characters and only accept string argumentss
-# Identifiers have dollar signs
-# Every argument is a string
-# String interpolation looks exactly like shell
-crate($crate) = SHELL(https://crates.io/search?q=$crate)
-# Functions can be added using JavaScript/V8 O_oooooooo

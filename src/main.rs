@@ -1,14 +1,19 @@
 use clap::{App, Arg};
 use http::Uri;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Error, Request, Response, Server};
+use hyper::{Body, Request, Response, Server};
 use log;
 use pretty_env_logger;
+use querystring;
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::fmt::Debug;
+use std::fs;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::SystemTime;
+use urlencoding;
 
 pub fn get_request_uid() -> String {
     format!(
@@ -26,33 +31,52 @@ macro_rules! time_request {
         let start = SystemTime::now();
         let res = $req_blk;
         let duration_ms = start.elapsed().unwrap();
-        log::trace!("[{}] Completed in {}ms", rid, duration_ms.as_millis());
+        log::trace!("[{}] Completed in {}micros", rid, duration_ms.as_micros());
         res
     }};
 }
 
-trait Rule {
+trait Rule: Send + Sync {
     fn produce_uri(&self, args: &Vec<String>) -> Result<Uri, String>;
 }
+
+type Rules = HashMap<String, Box<dyn Rule>>;
 
 #[derive(Default)]
 struct GoogleSearchRule;
 impl Rule for GoogleSearchRule {
     fn produce_uri(&self, args: &Vec<String>) -> std::result::Result<Uri, String> {
+        let encoded_query = urlencoding::encode(&args.join(" ")).into_owned();
+        log::debug!(target: "ezproxy::GoogleSearchRule", "Encoding query {} from args {:?}", encoded_query, args);
         Uri::builder()
             .scheme("https")
             .authority("www.google.com")
-            .path_and_query(format!("/search?q={}", args.join(" ")))
+            .path_and_query(format!("/search?q={}", encoded_query))
             .build()
-            .map_err(|_| "error!".into())
+            .map_err(|e| format!("Error producing URI: {}", e))
     }
 }
 
+#[derive(Default)]
+struct GmailRule;
+impl Rule for GmailRule {
+    fn produce_uri(&self, _: &Vec<String>) -> Result<Uri, String> {
+        Uri::builder()
+            .scheme("https")
+            .authority("gmail.com")
+            .path_and_query("/")
+            .build()
+            .map_err(|e| format!("Error producing URI: {}", e))
+    }
+}
+
+#[derive(Debug)]
 struct Command {
     name: String,
     args: Vec<String>,
 }
 
+#[derive(Clone)]
 struct Config {
     config_bytes: Vec<u8>,
 }
@@ -62,12 +86,17 @@ impl Config {
         Ok(Self { config_bytes })
     }
 
-    pub fn parse_redirect_rules(&self) -> Result<Vec<RedirectRules>, String> {
-        todo!();
+    pub fn parse_rules(&self) -> Result<Rules, String> {
+        log::warn!(target: "ezproxy::config", "Parsing rules (NOT YET IMPLEMENTED");
+        let mut rules: HashMap<String, Box<dyn Rule>> = HashMap::new();
+        rules.insert("m".into(), Box::new(GmailRule::default()));
+
+        Ok(rules)
     }
 
     fn somehow_read_path(path: &str) -> Result<Vec<u8>, String> {
-        todo!();
+        log::debug!(target: "ezproxy::config", "Reading config from path={}", path);
+        fs::read(path).map_err(|_| "Could not read config path".into())
     }
 }
 
@@ -75,21 +104,55 @@ impl Config {
 struct CommandParser {}
 impl CommandParser {
     pub fn parse(&self, uri: &Uri) -> Result<Command, String> {
-        todo!()
+        log::debug!(target: "ezproxy::command_parser", "Attempt parse {}", uri);
+
+        let query: String = uri
+            .query()
+            .map(|qs| querystring::querify(qs))
+            .and_then(|params| {
+                params.into_iter().find(|param| match param {
+                    ("q", _) => true,
+                    _ => false,
+                })
+            })
+            .map_or(Err("Could not find query param q=...".to_string()), |p| {
+                Ok(p.1.into())
+            })?;
+
+        let decoded = urlencoding::decode(&query)
+            .map(|cow| cow.into_owned())
+            .map_err(|_| "Could not decode query".to_owned())?;
+        let parts: Vec<String> = decoded.split(" ").map(|s| s.to_string()).collect();
+        match &parts[..] {
+            [] => Err("Malformed query".to_string()),
+            [name] => Ok(Command {
+                name: String::from(name),
+                args: vec![],
+            }),
+            p => {
+                let name = p[0].to_string();
+                let args = p[1..].iter().map(|s| s.to_string()).collect();
+                Ok(Command { name, args })
+            }
+        }
     }
 }
 
-struct RulesRegistry<R: Rule> {
-    rules: Vec<R>,
+struct RulesRegistry {
+    rules: Rules,
 }
 
-impl<R: Rule> RulesRegistry<R> {
-    pub fn get(&self, rule_name: &str) -> Option<R> {
-        todo!();
+impl RulesRegistry {
+    pub fn with_rules(rules: Rules) -> Self {
+        Self { rules }
+    }
+
+    pub fn get<'a>(&self, rule_name: &str) -> Option<&Box<dyn Rule>> {
+        self.rules.get(rule_name)
     }
 }
 
-impl<R: Rule> Debug for RulesRegistry<R> {
+impl Debug for RulesRegistry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RulesRegistry")
             .field("rules", &"[...]")
@@ -97,42 +160,33 @@ impl<R: Rule> Debug for RulesRegistry<R> {
     }
 }
 
-impl<R: Rule> RulesRegistry<R> {
-    pub fn with_rules(rules: Vec<R>) -> Self {
-        Self { rules }
-    }
-}
-
-enum RedirectRules {
-    Google(GoogleSearchRule),
-}
-impl Rule for RedirectRules {
-    fn produce_uri(&self, args: &Vec<String>) -> Result<Uri, String> {
-        match self {
-            Self::Google(rule) => rule.produce_uri(args),
-        }
-    }
-}
-
 #[derive(Debug)]
 struct Redirector {
     cmd_parser: CommandParser,
-    rules_registry: RulesRegistry<RedirectRules>,
+    rules_registry: RulesRegistry,
 }
 impl Redirector {
     pub fn with_config(config: &Config) -> Self {
         Self {
             cmd_parser: CommandParser::default(),
-            rules_registry: RulesRegistry::with_rules(config.parse_redirect_rules().unwrap()),
+            rules_registry: RulesRegistry::with_rules(config.parse_rules().unwrap()),
         }
     }
 
     pub fn evaluate(&self, uri: &Uri) -> Result<Uri, String> {
         let cmd = self.cmd_parser.parse(&uri)?;
+        log::debug!(target: "ezproxy::redirector", "Attempting redirector for {:?}", cmd);
         if let Some(rule) = self.rules_registry.get(&cmd.name) {
+            log::debug!(target: "ezproxy::redirector", "Evaluate {} with found rule", cmd.name);
             rule.produce_uri(&cmd.args)
         } else {
-            self.do_default(&cmd.args)
+            log::debug!(target: "ezproxy::redirector", "No rule found for {}. Using default", cmd.name);
+            let mut default_args = vec![];
+            default_args.push(cmd.name);
+            for arg in cmd.args {
+                default_args.push(arg);
+            }
+            self.do_default(&default_args)
         }
     }
 
@@ -145,9 +199,16 @@ fn uri_from_conn<T>(req: &mut Request<T>) -> Uri {
     req.uri().to_owned()
 }
 
-fn somehow_make_response(uri: Uri) -> http::Result<Response<Body>> {
-    let builder = Response::builder().status(302).header("X-Made-EZ", "true");
-    builder.body(Body::from(""))
+fn somehow_make_response(uri_result: Result<Uri, String>) -> http::Result<Response<Body>> {
+    let builder = Response::builder().header("X-EZ-Made-This", "true");
+
+    match uri_result {
+        Ok(uri) => builder
+            .status(302)
+            .header("Location", format!("{}", uri))
+            .body(Body::from("")),
+        Err(msg) => builder.status(500).body(Body::from(msg)),
+    }
 }
 
 fn somehow_get_and_validate_args() -> String {
@@ -168,23 +229,43 @@ fn somehow_get_and_validate_args() -> String {
         .to_string()
 }
 
+#[derive(Clone)]
+struct AppContext {
+    redirector: Arc<Redirector>,
+}
+
+async fn handle(context: AppContext, mut req: Request<Body>) -> http::Result<Response<Body>> {
+    time_request!({
+        let eval_result = match context.redirector.evaluate(&uri_from_conn(&mut req)) {
+            Ok(uri) => {
+                log::info!(target: "ezproxy::handle", "Returning uri {}", uri);
+                Ok(uri)
+            }
+            Err(e) => {
+                log::error!(target: "ezproxy::handle", "Error evaluating request: {}", e);
+                Err(e)
+            }
+        };
+        somehow_make_response(eval_result)
+    })
+}
+
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
     // We'll bind to 127.0.0.1:3000
     let addr = SocketAddr::from(([127, 0, 0, 1], 5050));
-    log::info!("[boot] Starting on {}", addr);
+    log::info!(target: "ezproxy::boot", "Starting on {}", addr);
 
-    let make_service = make_service_fn(|_conn| async move {
-        Ok::<_, Infallible>(service_fn(|mut req| async move {
-            let config = Config::read_from_path(&somehow_get_and_validate_args()).unwrap();
-            let redirector = Redirector::with_config(&config);
-            time_request!({
-                redirector
-                    .evaluate(&uri_from_conn(&mut req))
-                    .and_then(|uri| somehow_make_response(uri).map_err(|_| todo!()))
-            })
-        }))
+    let path = somehow_get_and_validate_args();
+    let config = Config::read_from_path(&path).unwrap();
+    let context = AppContext {
+        redirector: Arc::new(Redirector::with_config(&config)),
+    };
+    let make_service = make_service_fn(move |_conn| {
+        let context = context.clone();
+        let service = service_fn(move |req| handle(context.clone(), req));
+        async move { Ok::<_, Infallible>(service) }
     });
 
     let server = Server::bind(&addr).serve(make_service);
