@@ -1,15 +1,11 @@
-use clap::{App, Arg};
 use http::Uri;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
 use log;
 use pretty_env_logger;
 use querystring;
-use std::collections::HashMap;
 use std::convert::Infallible;
-use std::fmt;
 use std::fmt::Debug;
-use std::fs;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -39,8 +35,6 @@ macro_rules! time_request {
 trait Rule: Send + Sync {
     fn produce_uri(&self, args: &Vec<String>) -> Result<Uri, String>;
 }
-
-type Rules = HashMap<String, Box<dyn Rule>>;
 
 #[derive(Default)]
 struct GoogleSearchRule;
@@ -103,38 +97,30 @@ impl Rule for NpmRule {
     }
 }
 
+#[derive(Default)]
+struct YouTubeRule;
+impl Rule for YouTubeRule {
+    fn produce_uri(&self, args: &Vec<String>) -> Result<Uri, String> {
+        let builder = Uri::builder().scheme("https").authority("youtube.com");
+
+        let res = match args[..] {
+            [] => builder.path_and_query("/").build(),
+            _ => {
+                let encoded = urlencoding::encode(&args.join(" ")).into_owned();
+                builder
+                    .path_and_query(format!("/results?search_query={}", encoded))
+                    .build()
+            }
+        };
+
+        res.map_err(|e| format!("Error producing URI: {}", e))
+    }
+}
+
 #[derive(Debug)]
 struct Command {
     name: String,
     args: Vec<String>,
-}
-
-#[derive(Clone)]
-struct Config {
-    config_bytes: Vec<u8>,
-}
-impl Config {
-    pub fn read_from_path(path: &str) -> Result<Self, String> {
-        let config_bytes = Self::somehow_read_path(path)?;
-        Ok(Self { config_bytes })
-    }
-
-    pub fn parse_rules(&self) -> Result<Rules, String> {
-        log::warn!(target: "ezproxy::config", "Parsing rules (NOT YET IMPLEMENTED)");
-        let mut rules: HashMap<String, Box<dyn Rule>> = HashMap::new();
-
-        // RULESS TODO: Actually parse
-        rules.insert("m".into(), Box::new(GmailRule::default()));
-        rules.insert("c".into(), Box::new(CalendarRule::default()));
-        rules.insert("npm".into(), Box::new(NpmRule::default()));
-
-        Ok(rules)
-    }
-
-    fn somehow_read_path(path: &str) -> Result<Vec<u8>, String> {
-        log::debug!(target: "ezproxy::config", "Reading config from path={}", path);
-        fs::read(path).map_err(|_| "Could not read config path".into())
-    }
 }
 
 #[derive(Default, Debug)]
@@ -176,60 +162,35 @@ impl CommandParser {
     }
 }
 
-struct RulesRegistry {
-    rules: Rules,
-}
-
-impl RulesRegistry {
-    pub fn with_rules(rules: Rules) -> Self {
-        Self { rules }
-    }
-
-    pub fn get<'a>(&self, rule_name: &str) -> Option<&Box<dyn Rule>> {
-        self.rules.get(rule_name)
-    }
-}
-
-impl Debug for RulesRegistry {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RulesRegistry")
-            .field("rules", &"[...]")
-            .finish()
-    }
-}
-
 #[derive(Debug)]
 struct Redirector {
     cmd_parser: CommandParser,
-    rules_registry: RulesRegistry,
 }
 impl Redirector {
-    pub fn with_config(config: &Config) -> Self {
+    pub fn default() -> Self {
         Self {
             cmd_parser: CommandParser::default(),
-            rules_registry: RulesRegistry::with_rules(config.parse_rules().unwrap()),
         }
     }
 
     pub fn evaluate(&self, uri: &Uri) -> Result<Uri, String> {
         let cmd = self.cmd_parser.parse(&uri)?;
         log::debug!(target: "ezproxy::redirector", "Attempting redirector for {:?}", cmd);
-        if let Some(rule) = self.rules_registry.get(&cmd.name) {
-            log::debug!(target: "ezproxy::redirector", "Evaluate {} with found rule", cmd.name);
-            rule.produce_uri(&cmd.args)
-        } else {
-            log::debug!(target: "ezproxy::redirector", "No rule found for {}. Using default", cmd.name);
-            let mut default_args = vec![];
-            default_args.push(cmd.name);
-            for arg in cmd.args {
-                default_args.push(arg);
+        match cmd.name.as_str() {
+            "m" => GmailRule::default().produce_uri(&cmd.args),
+            "c" => CalendarRule::default().produce_uri(&cmd.args),
+            "yt" => YouTubeRule::default().produce_uri(&cmd.args),
+            "npm" => NpmRule::default().produce_uri(&cmd.args),
+            _default => {
+                log::debug!(target: "ezproxy::redirector", "No rule found for {}. Using default", cmd.name);
+                let mut default_args = vec![];
+                default_args.push(cmd.name);
+                for arg in cmd.args {
+                    default_args.push(arg)
+                }
+                GoogleSearchRule::default().produce_uri(&default_args)
             }
-            self.do_default(&default_args)
         }
-    }
-
-    fn do_default(&self, args: &Vec<String>) -> Result<Uri, String> {
-        GoogleSearchRule::default().produce_uri(args)
     }
 }
 
@@ -247,24 +208,6 @@ fn somehow_make_response(uri_result: Result<Uri, String>) -> http::Result<Respon
             .body(Body::from("")),
         Err(msg) => builder.status(500).body(Body::from(msg)),
     }
-}
-
-fn somehow_get_and_validate_args() -> String {
-    let matches = App::new("EZProxy")
-        .version("0.1.0")
-        .about("Turns your address bar into a CLI")
-        .arg(
-            Arg::new("config")
-                .takes_value(true)
-                .required(true)
-                .help("Path to configuration"),
-        )
-        .get_matches();
-
-    matches
-        .value_of("config")
-        .expect("Must supply path")
-        .to_string()
 }
 
 #[derive(Clone)]
@@ -295,10 +238,8 @@ async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], 5050));
     log::info!(target: "ezproxy::boot", "Starting on {}", addr);
 
-    let path = somehow_get_and_validate_args();
-    let config = Config::read_from_path(&path).unwrap();
     let context = AppContext {
-        redirector: Arc::new(Redirector::with_config(&config)),
+        redirector: Arc::new(Redirector::default()),
     };
     let make_service = make_service_fn(move |_conn| {
         let context = context.clone();

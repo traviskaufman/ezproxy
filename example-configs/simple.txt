@@ -1,2 +1,6 @@
-m = gmail.com
-c = calendar.google.com
+m = https://gmail.com/
+c = https://calendar.google.com/
+yt = https://youtube.com/results?search_query={ARGS}
+npm = https://npmjs.com/search?q={ARGS}
+_ = https://www.google.com/search?q={ALL}
+
