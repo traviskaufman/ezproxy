@@ -64,6 +64,10 @@ impl Rule for GmailRule {
     }
 }
 
+/// What I want:
+/// #[rule("https://calendar.google.com/")]
+/// struct CalendarRule
+
 #[derive(Default)]
 struct CalendarRule;
 impl Rule for CalendarRule {
