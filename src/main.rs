@@ -1,9 +1,11 @@
+use ezproxy::config;
 use http::Uri;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
 use log;
 use pretty_env_logger;
 use querystring;
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt::Debug;
 use std::net::SocketAddr;
@@ -166,34 +168,51 @@ impl CommandParser {
     }
 }
 
-#[derive(Debug)]
+static DEFAULT_RULE_KEY: &'static str = "_";
+
 struct Redirector {
     cmd_parser: CommandParser,
+    rules: HashMap<String, Box<dyn Rule>>,
 }
 impl Redirector {
-    pub fn default() -> Self {
+    pub fn with_rules(rules: HashMap<String, Box<dyn Rule>>) -> Self {
         Self {
+            rules,
             cmd_parser: CommandParser::default(),
         }
+    }
+
+    pub fn default() -> Self {
+        let mut rules: HashMap<String, Box<dyn Rule>> = HashMap::new();
+        rules.insert("m".to_owned(), Box::new(GmailRule::default()));
+        rules.insert("c".to_owned(), Box::new(CalendarRule::default()));
+        rules.insert("yt".to_owned(), Box::new(YouTubeRule::default()));
+        rules.insert("npm".to_owned(), Box::new(NpmRule::default()));
+        rules.insert(
+            DEFAULT_RULE_KEY.to_owned(),
+            Box::new(GoogleSearchRule::default()),
+        );
+        Redirector::with_rules(rules)
     }
 
     pub fn evaluate(&self, uri: &Uri) -> Result<Uri, String> {
         let cmd = self.cmd_parser.parse(&uri)?;
         log::debug!(target: "ezproxy::redirector", "Attempting redirector for {:?}", cmd);
-        match cmd.name.as_str() {
-            "m" => GmailRule::default().produce_uri(&cmd.args),
-            "c" => CalendarRule::default().produce_uri(&cmd.args),
-            "yt" => YouTubeRule::default().produce_uri(&cmd.args),
-            "npm" => NpmRule::default().produce_uri(&cmd.args),
-            _default => {
-                log::debug!(target: "ezproxy::redirector", "No rule found for {}. Using default", cmd.name);
-                let mut default_args = vec![];
-                default_args.push(cmd.name);
-                for arg in cmd.args {
-                    default_args.push(arg)
-                }
-                GoogleSearchRule::default().produce_uri(&default_args)
+        if let Some(rule) = self.rules.get(&cmd.name) {
+            rule.produce_uri(&cmd.args)
+        } else if let Some(default_rule) = self.rules.get(DEFAULT_RULE_KEY) {
+            log::debug!(target: "ezproxy::redirector", "No rule found for {}. Using default", cmd.name);
+            let mut default_args = vec![];
+            default_args.push(cmd.name);
+            for arg in cmd.args {
+                default_args.push(arg)
             }
+            default_rule.produce_uri(&default_args)
+        } else {
+            Err(format!(
+                "Could not find rule for cmd {}, and no default given",
+                cmd.name
+            ))
         }
     }
 }
