@@ -3,6 +3,9 @@ name = "ezproxy"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "ezproxy"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -14,3 +17,5 @@ clap = "3.0.0"
 http = "0.2.6"
 querystring = "1.1.0"
 urlencoding = "2.1.0"
+regex = "1.5.6"
+lazy_static = "1.4.0"

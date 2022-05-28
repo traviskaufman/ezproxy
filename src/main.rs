@@ -1,4 +1,4 @@
-use ezproxy::config;
+use ezproxy::rules::*;
 use http::Uri;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
@@ -32,95 +32,6 @@ macro_rules! time_request {
         log::trace!("[{}] Completed in {}micros", rid, duration_ms.as_micros());
         res
     }};
-}
-
-trait Rule: Send + Sync {
-    fn produce_uri(&self, args: &Vec<String>) -> Result<Uri, String>;
-}
-
-#[derive(Default)]
-struct GoogleSearchRule;
-impl Rule for GoogleSearchRule {
-    fn produce_uri(&self, args: &Vec<String>) -> std::result::Result<Uri, String> {
-        let encoded_query = urlencoding::encode(&args.join(" ")).into_owned();
-        log::debug!(target: "ezproxy::GoogleSearchRule", "Encoding query {} from args {:?}", encoded_query, args);
-        Uri::builder()
-            .scheme("https")
-            .authority("www.google.com")
-            .path_and_query(format!("/search?q={}", encoded_query))
-            .build()
-            .map_err(|e| format!("Error producing URI: {}", e))
-    }
-}
-
-#[derive(Default)]
-struct GmailRule;
-impl Rule for GmailRule {
-    fn produce_uri(&self, _: &Vec<String>) -> Result<Uri, String> {
-        Uri::builder()
-            .scheme("https")
-            .authority("gmail.com")
-            .path_and_query("/")
-            .build()
-            .map_err(|e| format!("Error producing URI: {}", e))
-    }
-}
-
-/// What I want:
-/// #[rule("https://calendar.google.com/")]
-/// struct CalendarRule
-
-#[derive(Default)]
-struct CalendarRule;
-impl Rule for CalendarRule {
-    fn produce_uri(&self, _: &Vec<String>) -> Result<Uri, String> {
-        Uri::builder()
-            .scheme("https")
-            .authority("calendar.google.com")
-            .path_and_query("/")
-            .build()
-            .map_err(|e| format!("Error producing URI: {}", e))
-    }
-}
-
-#[derive(Default)]
-struct NpmRule;
-impl Rule for NpmRule {
-    fn produce_uri(&self, args: &Vec<String>) -> Result<Uri, String> {
-        let builder = Uri::builder().scheme("https").authority("npmjs.com");
-
-        let res = match args[..] {
-            [] => builder.path_and_query("/").build(),
-            _ => {
-                let encoded = urlencoding::encode(&args.join(" ")).into_owned();
-                builder
-                    .path_and_query(format!("/search?q={}", encoded))
-                    .build()
-            }
-        };
-
-        res.map_err(|e| format!("Error producing URI: {}", e))
-    }
-}
-
-#[derive(Default)]
-struct YouTubeRule;
-impl Rule for YouTubeRule {
-    fn produce_uri(&self, args: &Vec<String>) -> Result<Uri, String> {
-        let builder = Uri::builder().scheme("https").authority("youtube.com");
-
-        let res = match args[..] {
-            [] => builder.path_and_query("/").build(),
-            _ => {
-                let encoded = urlencoding::encode(&args.join(" ")).into_owned();
-                builder
-                    .path_and_query(format!("/results?search_query={}", encoded))
-                    .build()
-            }
-        };
-
-        res.map_err(|e| format!("Error producing URI: {}", e))
-    }
 }
 
 #[derive(Debug)]
