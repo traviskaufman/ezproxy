@@ -50,13 +50,12 @@ pub mod config {
   }
   // TODO: More
   impl Rule for ConfigRule {
-    fn produce_uri(&self, args: &Vec<String>) -> Result<Uri, String> {
+    // Alter args such that the cmd name is the first arg
+    fn produce_uri(&self, cmd: String, args: &Vec<String>) -> Result<Uri, String> {
       static ARGS_STR: &'static str = "{ARGS}";
       static ALL_STR: &'static str = "{ALL}";
       let mut uri = self.uri;
-      if uri.contains(ALL_STR) {
-        uri = uri.re
-      }
+      if uri.contains(ALL_STR) {}
     }
   }
 }
