@@ -95,15 +95,6 @@ impl Redirector {
     }
 
     pub fn default() -> Self {
-        // let mut rules: HashMap<String, Box<dyn Rule>> = HashMap::new();
-        // rules.insert("m".to_owned(), Box::new(GmailRule::default()));
-        // rules.insert("c".to_owned(), Box::new(CalendarRule::default()));
-        // rules.insert("yt".to_owned(), Box::new(YouTubeRule::default()));
-        // rules.insert("npm".to_owned(), Box::new(NpmRule::default()));
-        // rules.insert(
-        //     DEFAULT_RULE_KEY.to_owned(),
-        //     Box::new(GoogleSearchRule::default()),
-        // );
         let rules = config::parse_rules_from("./example-configs/simple.txt");
         Redirector::with_rules(rules)
     }
