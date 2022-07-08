@@ -1,3 +1,4 @@
+use ezproxy::config;
 use ezproxy::rules::*;
 use http::Uri;
 use hyper::service::{make_service_fn, service_fn};
@@ -94,15 +95,16 @@ impl Redirector {
     }
 
     pub fn default() -> Self {
-        let mut rules: HashMap<String, Box<dyn Rule>> = HashMap::new();
-        rules.insert("m".to_owned(), Box::new(GmailRule::default()));
-        rules.insert("c".to_owned(), Box::new(CalendarRule::default()));
-        rules.insert("yt".to_owned(), Box::new(YouTubeRule::default()));
-        rules.insert("npm".to_owned(), Box::new(NpmRule::default()));
-        rules.insert(
-            DEFAULT_RULE_KEY.to_owned(),
-            Box::new(GoogleSearchRule::default()),
-        );
+        // let mut rules: HashMap<String, Box<dyn Rule>> = HashMap::new();
+        // rules.insert("m".to_owned(), Box::new(GmailRule::default()));
+        // rules.insert("c".to_owned(), Box::new(CalendarRule::default()));
+        // rules.insert("yt".to_owned(), Box::new(YouTubeRule::default()));
+        // rules.insert("npm".to_owned(), Box::new(NpmRule::default()));
+        // rules.insert(
+        //     DEFAULT_RULE_KEY.to_owned(),
+        //     Box::new(GoogleSearchRule::default()),
+        // );
+        let rules = config::parse_rules_from("./example-configs/simple.txt");
         Redirector::with_rules(rules)
     }
 
@@ -110,15 +112,10 @@ impl Redirector {
         let cmd = self.cmd_parser.parse(&uri)?;
         log::debug!(target: "ezproxy::redirector", "Attempting redirector for {:?}", cmd);
         if let Some(rule) = self.rules.get(&cmd.name) {
-            rule.produce_uri(&cmd.args)
+            rule.produce_uri(&cmd.name, &cmd.args)
         } else if let Some(default_rule) = self.rules.get(DEFAULT_RULE_KEY) {
             log::debug!(target: "ezproxy::redirector", "No rule found for {}. Using default", cmd.name);
-            let mut default_args = vec![];
-            default_args.push(cmd.name);
-            for arg in cmd.args {
-                default_args.push(arg)
-            }
-            default_rule.produce_uri(&default_args)
+            default_rule.produce_uri(&cmd.name, &cmd.args)
         } else {
             Err(format!(
                 "Could not find rule for cmd {}, and no default given",
@@ -165,6 +162,8 @@ async fn handle(context: AppContext, mut req: Request<Body>) -> http::Result<Res
     })
 }
 
+/// TODO:
+/// - Support specifying a config
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
