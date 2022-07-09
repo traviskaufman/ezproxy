@@ -1,7 +1,9 @@
 [package]
 name = "ezproxy"
+description = "Keyboard Shortcuts for Your Address Bar"
 version = "0.1.0"
 edition = "2021"
+authors = ["Travis Kaufman <travis.kaufman@gmail.com>"]
 
 [lib]
 name = "ezproxy"
@@ -13,7 +15,7 @@ hyper = { version = "0.14", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
 log = "0.4.14"
 pretty_env_logger = "0.4.0"
-clap = "3.0.0"
+clap = { version = "3.2.8", features = ["derive"] }
 http = "0.2.6"
 querystring = "1.1.0"
 urlencoding = "2.1.0"

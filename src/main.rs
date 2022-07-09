@@ -1,3 +1,4 @@
+use clap::Parser;
 use ezproxy::config;
 use ezproxy::rules::*;
 use http::Uri;
@@ -10,6 +11,8 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt::Debug;
 use std::net::SocketAddr;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 use urlencoding;
@@ -80,8 +83,6 @@ impl CommandParser {
     }
 }
 
-static DEFAULT_RULE_KEY: &'static str = "_";
-
 struct Redirector {
     cmd_parser: CommandParser,
     rules: HashMap<String, Box<dyn Rule>>,
@@ -94,8 +95,8 @@ impl Redirector {
         }
     }
 
-    pub fn default() -> Self {
-        let rules = config::parse_rules_from("./example-configs/simple.txt");
+    pub fn with_config<P: AsRef<Path>>(config_path: P) -> Self {
+        let rules = config::parse_rules_from(config_path);
         Redirector::with_rules(rules)
     }
 
@@ -153,17 +154,30 @@ async fn handle(context: AppContext, mut req: Request<Body>) -> http::Result<Res
     })
 }
 
-/// TODO:
-/// - Support specifying a config
+/// Keyboard shortcuts for your address bar
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// Path to the config file used to specify shortcuts. See example-configs/simple.txt for a starter config.
+    #[clap(value_parser, value_name = "FILE")]
+    config: PathBuf,
+
+    /// Port which ezproxy will run on
+    #[clap(short, long, value_parser, default_value_t = 5050)]
+    port: u16,
+}
+
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
-    // We'll bind to 127.0.0.1:3000
-    let addr = SocketAddr::from(([127, 0, 0, 1], 5050));
+
+    let args = Args::parse();
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
     log::info!(target: "ezproxy::boot", "Starting on {}", addr);
 
     let context = AppContext {
-        redirector: Arc::new(Redirector::default()),
+        redirector: Arc::new(Redirector::with_config(&args.config)),
     };
     let make_service = make_service_fn(move |_conn| {
         let context = context.clone();

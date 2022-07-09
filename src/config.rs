@@ -1,6 +1,7 @@
 use crate::rules::Rule;
 use hyper::Uri;
 use lazy_static::lazy_static;
+use log;
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
@@ -57,20 +58,59 @@ impl Rule for ConfigRule {
   fn produce_uri(&self, cmd: &str, args: &Vec<String>) -> Result<Uri, String> {
     static ARGS_STR: &'static str = "{ARGS}";
     static ALL_STR: &'static str = "{ALL}";
-    let mut uri = self.uri.clone();
+    let uri = self.uri.clone();
     let args_str = args.join(" ");
-    let args_str = urlencoding::encode(&args_str);
 
-    if uri.contains(ALL_STR) {
+    let uri_str = if uri.contains(ALL_STR) {
       let all_str = format!("{} {}", cmd, args_str);
-      let all_str = urlencoding::encode(&all_str);
-      uri = uri.replace(ALL_STR, &all_str);
+      uri.replace(ALL_STR, &urlencoding::encode(&all_str))
     } else if uri.contains(ARGS_STR) {
-      uri = uri.replace(ARGS_STR, &args_str);
-    }
-    let uri = uri
+      uri.replace(ARGS_STR, &urlencoding::encode(&args_str))
+    } else {
+      uri
+    };
+    log::debug!("Produce URI {}", uri_str);
+
+    let uri = uri_str
       .parse::<Uri>()
-      .map_err(|_| String::from("URI Parse error"))?;
+      .map_err(|e| String::from(format!("URI Parse error for {}: {}", uri_str, e)))?;
     Ok(uri)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_static() -> Result<(), String> {
+    let rule = ConfigRule::new("m", "https://gmail.com/");
+    let args = vec![];
+    assert_eq!(
+      format!("{}", rule.produce_uri("m", &args)?),
+      "https://gmail.com/"
+    );
+    Ok(())
+  }
+
+  #[test]
+  fn test_args() -> Result<(), String> {
+    let rule = ConfigRule::new("npm", "https://npmjs.com/?q={ARGS}");
+    let args = vec![String::from("parse"), String::from("file")];
+    let uri = rule.produce_uri("npm", &args)?;
+    assert_eq!(format!("{}", uri), "https://npmjs.com/?q=parse%20file");
+    Ok(())
+  }
+
+  #[test]
+  fn test_all() -> Result<(), String> {
+    let rule = ConfigRule::new("google", "https://google.com/search?q={ALL}");
+    let args = vec![String::from("parse"), String::from("file")];
+    let uri = rule.produce_uri("rustlang", &args)?;
+    assert_eq!(
+      format!("{}", uri),
+      "https://google.com/search?q=rustlang%20parse%20file"
+    );
+    Ok(())
   }
 }

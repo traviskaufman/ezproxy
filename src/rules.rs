@@ -4,6 +4,8 @@ pub trait Rule: Send + Sync {
   fn produce_uri(&self, cmd: &str, args: &Vec<String>) -> Result<Uri, String>;
 }
 
+pub static DEFAULT_RULE_KEY: &'static str = "_";
+
 // #[derive(Default)]
 // pub struct YouTubeRule;
 // impl Rule for YouTubeRule {
