@@ -157,6 +157,6 @@ impl Rule for YouTubeRule {
     res.map_err(|e| format!("Error producing URI: {}", e))
   }
 }
+```
 
 then edit `src/main.rs` to add the rule
-```
