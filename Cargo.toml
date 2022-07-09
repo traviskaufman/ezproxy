@@ -4,6 +4,7 @@ description = "Keyboard Shortcuts for Your Address Bar"
 version = "0.1.0"
 edition = "2021"
 authors = ["Travis Kaufman <travis.kaufman@gmail.com>"]
+license = "MIT"
 
 [lib]
 name = "ezproxy"
