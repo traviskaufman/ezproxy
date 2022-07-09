@@ -22,3 +22,8 @@ querystring = "1.1.0"
 urlencoding = "2.1.0"
 regex = "1.5.6"
 lazy_static = "1.4.0"
+
+[dev-dependencies]
+assert_fs = "1.0.7"
+duct = "0.13.5"
+scopeguard = "1.1.0"
