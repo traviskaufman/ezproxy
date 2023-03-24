@@ -4,6 +4,7 @@ use lazy_static::lazy_static;
 use log;
 use regex::Regex;
 use std::collections::HashMap;
+use std::fmt;
 use std::fs;
 use std::path::Path;
 
@@ -29,20 +30,14 @@ pub fn parse_rules_from<P: AsRef<Path>>(path: P) -> HashMap<String, Box<dyn Rule
   rules
 }
 
-/// TODO:
-/// - Maybe have it parse up front to speed up evals and avoid regexes on every run
-#[derive(Default)]
-struct ConfigRule {
+#[derive(Debug)]
+pub struct ConfigRule {
   kw: String,
   uri: String,
 }
 
 impl ConfigRule {
-  pub fn new<K, U>(kw: K, uri: U) -> Self
-  where
-    K: Into<String>,
-    U: Into<String>,
-  {
+  pub fn new<K: Into<String>, U: Into<String>>(kw: K, uri: U) -> Self {
     Self {
       kw: kw.into(),
       uri: uri.into(),
@@ -53,28 +48,33 @@ impl ConfigRule {
     &self.kw
   }
 }
+
+impl fmt::Display for ConfigRule {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "ConfigRule[kw={}, uri={}]", self.kw, self.uri)
+  }
+}
+
 impl Rule for ConfigRule {
-  // Alter args such that the cmd name is the first arg
-  fn produce_uri(&self, cmd: &str, args: &Vec<String>) -> Result<Uri, String> {
-    static ARGS_STR: &'static str = "{ARGS}";
-    static ALL_STR: &'static str = "{ALL}";
-    let uri = self.uri.clone();
-    let args_str = args.join(" ");
+  fn produce_uri(&self, cmd: &str, args: &[String]) -> Result<Uri, String> {
+    const ARGS_STR: &str = "{ARGS}";
+    const ALL_STR: &str = "{ALL}";
 
-    let uri_str = if uri.contains(ALL_STR) {
-      let all_str = format!("{} {}", cmd, args_str);
-      uri.replace(ALL_STR, &urlencoding::encode(&all_str))
-    } else if uri.contains(ARGS_STR) {
-      uri.replace(ARGS_STR, &urlencoding::encode(&args_str))
+    let uri_str = if self.uri.contains(ALL_STR) {
+      let all_str = format!("{} {}", cmd, args.join(" "));
+      self.uri.replace(ALL_STR, &urlencoding::encode(&all_str))
+    } else if self.uri.contains(ARGS_STR) {
+      self
+        .uri
+        .replace(ARGS_STR, &urlencoding::encode(&args.join(" ")))
     } else {
-      uri
+      self.uri.clone()
     };
-    log::debug!("Produce URI {}", uri_str);
 
-    let uri = uri_str
+    log::debug!("Produce URI {}", uri_str);
+    uri_str
       .parse::<Uri>()
-      .map_err(|e| String::from(format!("URI Parse error for {}: {}", uri_str, e)))?;
-    Ok(uri)
+      .map_err(|e| format!("URI Parse error for {}: {}", uri_str, e).into())
   }
 }
 
@@ -83,34 +83,41 @@ mod tests {
   use super::*;
 
   #[test]
-  fn test_static() -> Result<(), String> {
-    let rule = ConfigRule::new("m", "https://gmail.com/");
-    let args = vec![];
-    assert_eq!(
-      format!("{}", rule.produce_uri("m", &args)?),
-      "https://gmail.com/"
-    );
-    Ok(())
+  fn new_config_rule() {
+    let config_rule = ConfigRule::new("test_kw", "test_uri");
+    assert_eq!(config_rule.kw(), "test_kw");
   }
 
   #[test]
-  fn test_args() -> Result<(), String> {
-    let rule = ConfigRule::new("npm", "https://npmjs.com/?q={ARGS}");
-    let args = vec![String::from("parse"), String::from("file")];
-    let uri = rule.produce_uri("npm", &args)?;
-    assert_eq!(format!("{}", uri), "https://npmjs.com/?q=parse%20file");
-    Ok(())
+  fn produce_uri_all() {
+    let config_rule = ConfigRule::new("test_kw", "http://example.com/{ALL}");
+    let cmd = "test_cmd";
+    let args = vec!["arg1".to_string(), "arg2".to_string()];
+    let result = config_rule.produce_uri(cmd, &args);
+    assert!(result.is_ok());
+    let uri = result.unwrap();
+    assert_eq!(uri.to_string(), "http://example.com/test_cmd%20arg1%20arg2");
   }
 
   #[test]
-  fn test_all() -> Result<(), String> {
-    let rule = ConfigRule::new("google", "https://google.com/search?q={ALL}");
-    let args = vec![String::from("parse"), String::from("file")];
-    let uri = rule.produce_uri("rustlang", &args)?;
-    assert_eq!(
-      format!("{}", uri),
-      "https://google.com/search?q=rustlang%20parse%20file"
-    );
-    Ok(())
+  fn produce_uri_args() {
+    let config_rule = ConfigRule::new("test_kw", "http://example.com/{ARGS}");
+    let cmd = "test_cmd";
+    let args = vec!["arg1".to_string(), "arg2".to_string()];
+    let result = config_rule.produce_uri(cmd, &args);
+    assert!(result.is_ok());
+    let uri = result.unwrap();
+    assert_eq!(uri.to_string(), "http://example.com/arg1%20arg2");
+  }
+
+  #[test]
+  fn produce_uri_no_replace() {
+    let config_rule = ConfigRule::new("test_kw", "http://example.com/");
+    let cmd = "test_cmd";
+    let args = vec!["arg1".to_string(), "arg2".to_string()];
+    let result = config_rule.produce_uri(cmd, &args);
+    assert!(result.is_ok());
+    let uri = result.unwrap();
+    assert_eq!(uri.to_string(), "http://example.com/");
   }
 }
