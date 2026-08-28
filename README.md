@@ -40,6 +40,18 @@ Run
 
 This will start a server on port `5050`. If you need to change the port, you can use the `--port` flag.
 
+## macOS menu bar app
+
+The recommended way to run ezproxy on macOS is the menu bar app in `ezproxy-osx/`. It bundles the `ezproxy` binary, runs it against `~/ezproxy.txt` on port 5050, registers itself to launch at login (toggle it under "Launch at Login" in the menu), and restarts the server automatically whenever `~/ezproxy.txt` changes.
+
+Build a `.dmg` with:
+
+```sh
+./ezproxy-osx/package-dmg.sh
+```
+
+This produces `ezproxy-osx/EZProxy-<version>.dmg`; drag the app into `/Applications`. The build is signed with a development certificate only, so on another Mac you will need to right-click → Open the first time.
+
 ## (Optional) Run ezproxy at login on macOS
 
 To have ezproxy start automatically without a terminal, create a launchd LaunchAgent at `~/Library/LaunchAgents/com.github.traviskaufman.ezproxy.plist`, replacing the two paths with the location of your binary and config file:

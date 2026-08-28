@@ -6,7 +6,7 @@ final class ProxyProcess: ObservableObject {
 
     private var process: Process?
     private let binaryURL = Bundle.main.url(forAuxiliaryExecutable: "ezproxy")!
-    private let configPath = FileManager.default.homeDirectoryForCurrentUser
+    let configPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("ezproxy.txt").path
     private let port = 5050
 
