@@ -1,10 +1,10 @@
 use hyper::Uri;
 
 pub trait Rule: Send + Sync {
-  fn produce_uri(&self, cmd: &str, args: &[String]) -> Result<Uri, String>;
+    fn produce_uri(&self, cmd: &str, args: &[String]) -> Result<Uri, String>;
 }
 
-pub static DEFAULT_RULE_KEY: &'static str = "_";
+pub static DEFAULT_RULE_KEY: &str = "_";
 
 // #[derive(Default)]
 // pub struct YouTubeRule;

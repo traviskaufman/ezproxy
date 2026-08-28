@@ -4,9 +4,6 @@ use ezproxy::rules::*;
 use http::Uri;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
-use log;
-use pretty_env_logger;
-use querystring;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt::Debug;
@@ -15,7 +12,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
-use urlencoding;
 
 pub fn get_request_uid() -> String {
     format!(
@@ -53,12 +49,7 @@ impl CommandParser {
         let query = uri
             .query()
             .map(|qs| querystring::querify(qs))
-            .and_then(|params| {
-                params.into_iter().find(|param| match param {
-                    ("q", _) => true,
-                    _ => false,
-                })
-            })
+            .and_then(|params| params.into_iter().find(|param| matches!(param, ("q", _))))
             .map_or(Err("Could not find query param q=...".to_string()), |p| {
                 Ok(p.1.into())
             })
@@ -101,7 +92,7 @@ impl Redirector {
     }
 
     pub fn evaluate(&self, uri: &Uri) -> Result<Uri, String> {
-        let cmd = self.cmd_parser.parse(&uri)?;
+        let cmd = self.cmd_parser.parse(uri)?;
         log::debug!(target: "ezproxy::redirector", "Attempting redirector for {:?}", cmd);
         if let Some(rule) = self.rules.get(&cmd.name) {
             rule.produce_uri(&cmd.name, &cmd.args)
@@ -127,7 +118,7 @@ fn somehow_make_response(uri_result: Result<Uri, String>) -> http::Result<Respon
     match uri_result {
         Ok(uri) => builder
             .status(302)
-            .header("Location", format!("{}", uri))
+            .header("Location", format!("{uri}"))
             .body(Body::from("")),
         Err(msg) => builder.status(500).body(Body::from(msg)),
     }
@@ -188,6 +179,6 @@ async fn main() {
     let server = Server::bind(&addr).serve(make_service);
 
     if let Err(e) = server.await {
-        eprintln!("Server error: {}", e);
+        eprintln!("Server error: {e}");
     }
 }
