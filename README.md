@@ -121,7 +121,7 @@ m = https://gmail.com/
 
 It means that when you type `m` into the address bar, you'll go to GMail.
 
-It's recommended to copy over the `example-configs/simple.txt` to get started, and modify from there.
+It's recommended to copy over the `ezproxy-core/example-configs/simple.txt` to get started, and modify from there.
 
 ## Shortcut Arguments
 
