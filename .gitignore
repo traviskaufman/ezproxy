@@ -1,1 +1,4 @@
-/target
+ezproxy-core/target
+acceptance-tests/node_modules
+xcuserdata/
+.claude/settings.local.json
