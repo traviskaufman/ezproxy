@@ -40,6 +40,46 @@ Run
 
 This will start a server on port `5050`. If you need to change the port, you can use the `--port` flag.
 
+## (Optional) Run ezproxy at login on macOS
+
+To have ezproxy start automatically without a terminal, create a launchd LaunchAgent at `~/Library/LaunchAgents/com.github.traviskaufman.ezproxy.plist`, replacing the two paths with the location of your binary and config file:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.github.traviskaufman.ezproxy</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/path/to/ezproxy</string>
+        <string>/path/to/ezproxy.txt</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/ezproxy.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/ezproxy.log</string>
+</dict>
+</plist>
+```
+
+Then load it:
+
+```sh
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.github.traviskaufman.ezproxy.plist
+```
+
+ezproxy will now start at login and be restarted if it exits. After changing the binary or the config file, restart it with:
+
+```sh
+launchctl kickstart -k gui/$(id -u)/com.github.traviskaufman.ezproxy
+```
+
 ## Change your browser's default search engine to ezproxy
 
 ### In Google Chrome
