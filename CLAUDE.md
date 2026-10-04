@@ -71,5 +71,5 @@ Browser → GET /?q=<input> → CommandParser → Command {name, args}
 
 - **hyper** 0.14 + **tokio** for async HTTP
 - **clap** 3.2 for CLI args
-- **regex** + **lazy_static** for config parsing
+- **regex** for config parsing
 - Acceptance tests: **Vitest**, **TypeScript** 5.8

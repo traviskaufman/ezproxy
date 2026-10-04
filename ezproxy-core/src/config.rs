@@ -1,21 +1,19 @@
 use crate::rules::Rule;
 use hyper::Uri;
-use lazy_static::lazy_static;
 use log;
 use regex::Regex;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
 
 /// TODO:
 /// - Support comments
 /// - Support things like default URL vs. having ARGS (see commented-out YT)
 /// - Maybe rule needs to have produce_default() and produce_args()?
 pub fn parse_rules_from<P: AsRef<Path>>(path: P) -> HashMap<String, Box<dyn Rule>> {
-    lazy_static! {
-        static ref RULE_RE: Regex = Regex::new(r#"^(.+)\s=\s(.+)"#).unwrap();
-    }
+    static RULE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"^(.+)\s=\s(.+)"#).unwrap());
     let data = fs::read_to_string(path).unwrap();
     let config_rules = data.trim().split("\n").map(|line| {
         let ex = format!("Malformed config URL {line}: expected (kw) = (url)");

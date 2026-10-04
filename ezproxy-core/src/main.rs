@@ -13,23 +13,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-pub fn get_request_uid() -> String {
-    format!(
-        "request-{}",
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-    )
-}
-
 macro_rules! time_request {
     ($req_blk:block) => {{
-        let rid = get_request_uid();
         let start = SystemTime::now();
         let res = $req_blk;
-        let duration_ms = start.elapsed().unwrap();
-        log::trace!("[{}] Completed in {}micros", rid, duration_ms.as_micros());
+        log::trace!(
+            "[request-{}] Completed in {}micros",
+            start
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            start.elapsed().unwrap().as_micros()
+        );
         res
     }};
 }
@@ -50,27 +45,16 @@ impl CommandParser {
             .query()
             .map(|qs| querystring::querify(qs))
             .and_then(|params| params.into_iter().find(|param| matches!(param, ("q", _))))
-            .map_or(Err("Could not find query param q=...".to_string()), |p| {
-                Ok(p.1.into())
-            })
-            .map(|q: String| q.replace("+", " "))?;
+            .ok_or("Could not find query param q=...")?
+            .1
+            .replace('+', " ");
 
-        let decoded = urlencoding::decode(&query)
-            .map(|cow| cow.into_owned())
-            .map_err(|_| "Could not decode query".to_owned())?;
-        let parts: Vec<String> = decoded.split(" ").map(|s| s.to_string()).collect();
-        match &parts[..] {
-            [] => Err("Malformed query".to_string()),
-            [name] => Ok(Command {
-                name: String::from(name),
-                args: vec![],
-            }),
-            p => {
-                let name = p[0].to_string();
-                let args = p[1..].iter().map(|s| s.to_string()).collect();
-                Ok(Command { name, args })
-            }
-        }
+        let decoded =
+            urlencoding::decode(&query).map_err(|_| "Could not decode query".to_owned())?;
+        let mut parts = decoded.split(' ').map(String::from);
+        let name = parts.next().unwrap_or_default();
+        let args = parts.collect();
+        Ok(Command { name, args })
     }
 }
 
@@ -108,10 +92,6 @@ impl Redirector {
     }
 }
 
-fn uri_from_conn<T>(req: &mut Request<T>) -> Uri {
-    req.uri().to_owned()
-}
-
 fn somehow_make_response(uri_result: Result<Uri, String>) -> http::Result<Response<Body>> {
     let builder = Response::builder().header("X-EZ-Made-This", "true");
 
@@ -129,9 +109,9 @@ struct AppContext {
     redirector: Arc<Redirector>,
 }
 
-async fn handle(context: AppContext, mut req: Request<Body>) -> http::Result<Response<Body>> {
+async fn handle(context: AppContext, req: Request<Body>) -> http::Result<Response<Body>> {
     time_request!({
-        let eval_result = match context.redirector.evaluate(&uri_from_conn(&mut req)) {
+        let eval_result = match context.redirector.evaluate(req.uri()) {
             Ok(uri) => {
                 log::info!(target: "ezproxy::handle", "Returning uri {}", uri);
                 Ok(uri)
@@ -158,7 +138,7 @@ struct Args {
     port: u16,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     pretty_env_logger::init();
 
