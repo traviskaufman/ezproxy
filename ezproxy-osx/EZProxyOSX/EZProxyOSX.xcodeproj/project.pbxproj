@@ -250,7 +250,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\ncd \"${SRCROOT}/../../ezproxy-core\"\nexport PATH=\"${HOME}/.cargo/bin:${PATH}\"\ncargo build --release\nDEST=\"${BUILT_PRODUCTS_DIR}/${EXECUTABLE_FOLDER_PATH}/ezproxy\"\ncp target/release/ezproxy \"${DEST}\"\ncodesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY:--}\" --options runtime \"${DEST}\"\n";
+			shellScript = "set -e\ncd \"${SRCROOT}/../../ezproxy-core\"\nexport PATH=\"${HOME}/.cargo/bin:${PATH}\"\ncargo build --release --target aarch64-apple-darwin\nDEST=\"${BUILT_PRODUCTS_DIR}/${EXECUTABLE_FOLDER_PATH}/ezproxy\"\ncp target/aarch64-apple-darwin/release/ezproxy \"${DEST}\"\ncodesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY:--}\" --options runtime \"${DEST}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
