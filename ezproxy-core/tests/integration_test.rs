@@ -1,22 +1,14 @@
 use assert_fs::prelude::*;
-use duct;
 use hyper::Client;
-use scopeguard;
 use std::net::SocketAddr;
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::thread;
 use std::time;
-use tokio;
 
 fn assert_free_port() -> u16 {
     (1025..65535)
-        .find(
-            |port| match TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], *port))) {
-                Ok(_) => true,
-                Err(_) => false,
-            },
-        )
+        .find(|port| TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], *port))).is_ok())
         .expect("No free available ports!")
 }
 
@@ -33,7 +25,7 @@ fn wait_for_listener(port: u16) {
 
 #[tokio::test]
 async fn test_ezproxy() {
-    static CONFIG: &'static str = r#"
+    static CONFIG: &str = r#"
 m = https://gmail.com/
 npm = https://npmjs.com/search?q={ARGS}
 _ = https://www.google.com/search?q={ALL}
@@ -52,7 +44,7 @@ _ = https://www.google.com/search?q={ALL}
         "--release",
         "--",
         "--port",
-        format!("{}", port),
+        port.to_string(),
         config_file.path(),
     )
     .start()
@@ -61,7 +53,7 @@ _ = https://www.google.com/search?q={ALL}
     wait_for_listener(port);
 
     let client = Client::new();
-    let uri = format!("http://localhost:{}/?q=m", port).parse().unwrap();
+    let uri = format!("http://localhost:{port}/?q=m").parse().unwrap();
     let resp = client.get(uri).await.unwrap();
 
     assert_eq!(resp.status(), 302);
@@ -72,7 +64,7 @@ _ = https://www.google.com/search?q={ALL}
         "https://gmail.com/"
     );
 
-    let uri = format!("http://localhost:{}/?q=npm%20file%20finder", port)
+    let uri = format!("http://localhost:{port}/?q=npm%20file%20finder")
         .parse()
         .unwrap();
     let resp = client.get(uri).await.unwrap();
@@ -83,7 +75,7 @@ _ = https://www.google.com/search?q={ALL}
         "https://npmjs.com/search?q=file%20finder"
     );
 
-    let uri = format!("http://localhost:{}/?q=best%20restaurants%20nyc", port)
+    let uri = format!("http://localhost:{port}/?q=best%20restaurants%20nyc")
         .parse()
         .unwrap();
     let resp = client.get(uri).await.unwrap();

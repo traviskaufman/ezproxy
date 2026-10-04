@@ -1,6 +1,5 @@
 use crate::rules::Rule;
 use hyper::Uri;
-use log;
 use regex::Regex;
 use std::collections::HashMap;
 use std::fmt;
@@ -16,8 +15,9 @@ pub fn parse_rules_from<P: AsRef<Path>>(path: P) -> HashMap<String, Box<dyn Rule
     static RULE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"^(.+)\s=\s(.+)"#).unwrap());
     let data = fs::read_to_string(path).unwrap();
     let config_rules = data.trim().split("\n").map(|line| {
-        let ex = format!("Malformed config URL {line}: expected (kw) = (url)");
-        let captures = RULE_RE.captures(line).expect(&ex);
+        let Some(captures) = RULE_RE.captures(line) else {
+            panic!("Malformed config URL {line}: expected (kw) = (url)");
+        };
         ConfigRule::new(&captures[1], &captures[2])
     });
     let mut rules: HashMap<String, Box<dyn Rule>> = HashMap::new();
@@ -59,7 +59,7 @@ impl Rule for ConfigRule {
         const ALL_STR: &str = "{ALL}";
 
         let uri_str = if self.uri.contains(ALL_STR) {
-            let all_str = format!("{} {}", cmd, args.join(" "));
+            let all_str = format!("{cmd} {}", args.join(" "));
             self.uri.replace(ALL_STR, &urlencoding::encode(&all_str))
         } else if self.uri.contains(ARGS_STR) {
             self.uri
@@ -68,7 +68,7 @@ impl Rule for ConfigRule {
             self.uri.clone()
         };
 
-        log::debug!("Produce URI {}", uri_str);
+        log::debug!("Produce URI {uri_str}");
         uri_str
             .parse::<Uri>()
             .map_err(|e| format!("URI Parse error for {uri_str}: {e}"))

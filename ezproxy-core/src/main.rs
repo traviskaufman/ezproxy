@@ -39,7 +39,7 @@ struct Command {
 struct CommandParser {}
 impl CommandParser {
     pub fn parse(&self, uri: &Uri) -> Result<Command, String> {
-        log::debug!(target: "ezproxy::command_parser", "Attempt parse {}", uri);
+        log::debug!(target: "ezproxy::command_parser", "Attempt parse {uri}");
 
         let query = uri
             .query()
@@ -77,7 +77,7 @@ impl Redirector {
 
     pub fn evaluate(&self, uri: &Uri) -> Result<Uri, String> {
         let cmd = self.cmd_parser.parse(uri)?;
-        log::debug!(target: "ezproxy::redirector", "Attempting redirector for {:?}", cmd);
+        log::debug!(target: "ezproxy::redirector", "Attempting redirector for {cmd:?}");
         if let Some(rule) = self.rules.get(&cmd.name) {
             rule.produce_uri(&cmd.name, &cmd.args)
         } else if let Some(default_rule) = self.rules.get(DEFAULT_RULE_KEY) {
@@ -113,11 +113,11 @@ async fn handle(context: AppContext, req: Request<Body>) -> http::Result<Respons
     time_request!({
         let eval_result = match context.redirector.evaluate(req.uri()) {
             Ok(uri) => {
-                log::info!(target: "ezproxy::handle", "Returning uri {}", uri);
+                log::info!(target: "ezproxy::handle", "Returning uri {uri}");
                 Ok(uri)
             }
             Err(e) => {
-                log::error!(target: "ezproxy::handle", "Error evaluating request: {}", e);
+                log::error!(target: "ezproxy::handle", "Error evaluating request: {e}");
                 Err(e)
             }
         };
@@ -145,7 +145,7 @@ async fn main() {
     let args = Args::parse();
 
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
-    log::info!(target: "ezproxy::boot", "Starting on {}", addr);
+    log::info!(target: "ezproxy::boot", "Starting on {addr}");
 
     let context = AppContext {
         redirector: Arc::new(Redirector::with_config(&args.config)),
