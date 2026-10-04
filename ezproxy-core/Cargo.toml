@@ -2,7 +2,7 @@
 name = "ezproxy"
 description = "Keyboard Shortcuts for Your Address Bar"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["Travis Kaufman <travis.kaufman@gmail.com>"]
 license = "MIT"
 
